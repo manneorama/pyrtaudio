@@ -33,17 +33,23 @@ extern "C" {
 
 #define PYGILSTATE_RELEASE do { PyGILState_Release(gstate); } while (0)
 
-
+// pyrtaudio.RtAudio()
 typedef struct {
     PyObject_HEAD
     RtAudio *_rt;
     PyObject *_cb;
 } PyRtAudioObject;
 
+// pyrtaudio.DeviceInfo()
 typedef struct {
     PyObject_HEAD
     RtAudio::DeviceInfo *_info;
 } PyRtAudioDeviceInfoObject;
+
+typedef struct {
+    PyObject_HEAD
+    RtAudio::StreamParameters *_params;
+} PyRtAudioStreamParametersObject;
 
 static int __pyrtaudio_renderCallback(void *outputBuffer, void *inputBuffer,
         unsigned int frames, double streamTime, RtAudioStreamStatus status,
@@ -70,6 +76,85 @@ static int __pyrtaudio_duplexCallback(void *outputBuffer, void *inputBuffer,
     return 0;
 }
 
+// start RtAudio::StreamParameters wrap
+static void
+PyRtAudioStreamParameters_dealloc(PyRtAudioStreamParametersObject *self) {
+    if (self->_params) delete self->_params;
+    self->ob_type->tp_free((PyObject *) self);
+}
+
+static PyObject *
+PyRtAudioStreamParameters_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
+    PyRtAudioStreamParametersObject *self;
+
+    self = (PyRtAudioStreamParametersObject *) type->tp_alloc(type, 0);
+    if (self != NULL) {
+        self->_params = new RtAudio::StreamParameters;
+    }
+
+    return (PyObject *) self;
+}
+
+static int
+PyRtAudioStreamParameters_init(PyRtAudioStreamParametersObject *self,
+        PyObject *args, PyObject *kwds) {
+    unsigned int device, channels, first;
+    static char *kwlist[] = {"device", "channels", 
+        "first_channel", NULL};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|III", kwlist,
+                &device, &channels, &first))
+        return -1;
+
+    self->_params->deviceId = device;
+    self->_params->nChannels = channels;
+    self->_params->firstChannel = first;
+
+    return 0;
+}
+
+static PyTypeObject pyrtaudio_PyRtAudioStreamParametersType = {
+    PyObject_HEAD_INIT(NULL)
+    0,                                  //ob_size
+    "pyrtaudio.StreamParameters",              //tp_name
+    sizeof(PyRtAudioStreamParametersObject),            //tp_basicsize
+    0,                                  //tp_itemsize
+    (destructor) PyRtAudioStreamParameters_dealloc,     //tp_dealloc
+    0,                                  //tp_print
+    0,                                  //tp_getattr
+    0,                                  //tp_setattr
+    0,                                  //tp_compare
+    0,                                  //tp_repr
+    0,                                  //tp_as_number
+    0,                                  //tp_as_sequence
+    0,                                  //tp_as_mapping
+    0,                                  //tp_hash
+    0,                                  //tp_call
+    0,                                  //tp_str
+    0,                                  //tp_getattro
+    0,                                  //tp_setattro
+    0,                                  //tp_as_buffer
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, //tp_flags
+    "PyRtAudioStreamParameters",                        //tp_doc
+    0,                                  //tp_traverse
+    0,                                  //tp_clear
+    0,                                  //tp_richcompare
+    0,                                  //tp_weaklistoffset
+    0,                                  //tp_iter
+    0,                                  //tp_iternext
+    0,// ,            //tp_methods
+    0, //            //tp_members
+    0,                                  //tp_getset
+    0,                                  //tp_base
+    0,                                  //tp_dict
+    0,                                  //tp_descr_get
+    0,                                  //tp_descr_set
+    0,                                  //tp_dictoffset
+    (initproc) PyRtAudioStreamParameters_init,          //tp_init
+    0,                                  //tp_alloc
+    PyRtAudioStreamParameters_new,                      //tp_new
+};
+// end RtAudio::StreamParameters
+
 // start RtAudio::DeviceInfo wrap
 static void
 PyRtAudioDeviceInfo_dealloc(PyRtAudioDeviceInfoObject *self) {
@@ -94,47 +179,6 @@ PyRtAudioDeviceInfo_init(PyRtAudioDeviceInfoObject *self) {
     return 0;
 }
 
-static PyTypeObject pyrtaudio_PyRtAudioDeviceInfoType = {
-    PyObject_HEAD_INIT(NULL)
-    0,                                  //ob_size
-    "pyrtaudio.DeviceInfo",              //tp_name
-    sizeof(PyRtAudioDeviceInfoObject),            //tp_basicsize
-    0,                                  //tp_itemsize
-    (destructor) PyRtAudioDeviceInfo_dealloc,     //tp_dealloc
-    0,                                  //tp_print
-    0,                                  //tp_getattr
-    0,                                  //tp_setattr
-    0,                                  //tp_compare
-    0,                                  //tp_repr
-    0,                                  //tp_as_number
-    0,                                  //tp_as_sequence
-    0,                                  //tp_as_mapping
-    0,                                  //tp_hash
-    0,                                  //tp_call
-    0,                                  //tp_str
-    0,                                  //tp_getattro
-    0,                                  //tp_setattro
-    0,                                  //tp_as_buffer
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, //tp_flags
-    "PyRtAudioDeviceInfo",                        //tp_doc
-    0,                                  //tp_traverse
-    0,                                  //tp_clear
-    0,                                  //tp_richcompare
-    0,                                  //tp_weaklistoffset
-    0,                                  //tp_iter
-    0,                                  //tp_iternext
-    0,//    PyRtAudioDeviceInfoObject_methods,            //tp_methods
-    0, //PyRtAudioObject_members,            //tp_members
-    0,                                  //tp_getset
-    0,                                  //tp_base
-    0,                                  //tp_dict
-    0,                                  //tp_descr_get
-    0,                                  //tp_descr_set
-    0,                                  //tp_dictoffset
-    (initproc) PyRtAudioDeviceInfo_init,          //tp_init
-    0,                                  //tp_alloc
-    PyRtAudioDeviceInfo_new,                      //tp_new
-};
 
 static PyObject *
 PyRtAudioDeviceInfo_probed(PyRtAudioDeviceInfoObject *self) {
@@ -192,6 +236,48 @@ static PyMethodDef PyRtAudioDeviceInfoObject_methods[] = {
     {"isDefaultInput", (PyCFunction) PyRtAudioDeviceInfo_isDefaultInput,
         METH_NOARGS, "Return True if this device is the default input device"},
     {NULL}
+};
+
+static PyTypeObject pyrtaudio_PyRtAudioDeviceInfoType = {
+    PyObject_HEAD_INIT(NULL)
+    0,                                  //ob_size
+    "pyrtaudio.DeviceInfo",              //tp_name
+    sizeof(PyRtAudioDeviceInfoObject),            //tp_basicsize
+    0,                                  //tp_itemsize
+    (destructor) PyRtAudioDeviceInfo_dealloc,     //tp_dealloc
+    0,                                  //tp_print
+    0,                                  //tp_getattr
+    0,                                  //tp_setattr
+    0,                                  //tp_compare
+    0,                                  //tp_repr
+    0,                                  //tp_as_number
+    0,                                  //tp_as_sequence
+    0,                                  //tp_as_mapping
+    0,                                  //tp_hash
+    0,                                  //tp_call
+    0,                                  //tp_str
+    0,                                  //tp_getattro
+    0,                                  //tp_setattro
+    0,                                  //tp_as_buffer
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, //tp_flags
+    "PyRtAudioDeviceInfo",                        //tp_doc
+    0,                                  //tp_traverse
+    0,                                  //tp_clear
+    0,                                  //tp_richcompare
+    0,                                  //tp_weaklistoffset
+    0,                                  //tp_iter
+    0,                                  //tp_iternext
+    PyRtAudioDeviceInfoObject_methods,            //tp_methods
+    0, //PyRtAudioObject_members,            //tp_members
+    0,                                  //tp_getset
+    0,                                  //tp_base
+    0,                                  //tp_dict
+    0,                                  //tp_descr_get
+    0,                                  //tp_descr_set
+    0,                                  //tp_dictoffset
+    (initproc) PyRtAudioDeviceInfo_init,          //tp_init
+    0,                                  //tp_alloc
+    PyRtAudioDeviceInfo_new,                      //tp_new
 };
 
 // TODO: supported sample rates and native formats
@@ -384,17 +470,26 @@ static PyMethodDef pyrtaudio_functions[] = {
 PyMODINIT_FUNC initpyrtaudio(void) {
     PyObject *m;
 
-    pyrtaudio_PyRtAudioDeviceInfoType.tp_methods = PyRtAudioDeviceInfoObject_methods;
+    // this is necessary for the RtAudio class to be able to
+    // create DeviceInfo objects inside getDeviceInfo
+    //pyrtaudio_PyRtAudioDeviceInfoType.tp_methods = PyRtAudioDeviceInfoObject_methods;
+    
     if (PyType_Ready(&pyrtaudio_PyRtAudioType) < 0) return;
     if (PyType_Ready(&pyrtaudio_PyRtAudioDeviceInfoType) < 0) return;
+    if (PyType_Ready(&pyrtaudio_PyRtAudioStreamParametersType) < 0) return;
 
     m = Py_InitModule3("pyrtaudio", pyrtaudio_functions, "RtAudio python bindings");
     if (m == NULL) return;
 
     Py_INCREF(&pyrtaudio_PyRtAudioType);
     Py_INCREF(&pyrtaudio_PyRtAudioDeviceInfoType);
-    PyModule_AddObject(m, "RtAudio", (PyObject *) &pyrtaudio_PyRtAudioType);
-    PyModule_AddObject(m, "DeviceInfo", (PyObject *) &pyrtaudio_PyRtAudioDeviceInfoType);
+    Py_INCREF(&pyrtaudio_PyRtAudioStreamParametersType);
+    PyModule_AddObject(m, "RtAudio", 
+            (PyObject *) &pyrtaudio_PyRtAudioType);
+    PyModule_AddObject(m, "DeviceInfo", 
+            (PyObject *) &pyrtaudio_PyRtAudioDeviceInfoType);
+    PyModule_AddObject(m, "StreamParameters", 
+            (PyObject *) &pyrtaudio_PyRtAudioStreamParametersType);
 }
 
 #ifdef __cplusplus
