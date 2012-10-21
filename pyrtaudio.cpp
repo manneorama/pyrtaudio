@@ -218,18 +218,15 @@ PyRtAudio_getDeviceInfo(PyRtAudioObject *self, PyObject *args) {
 
     RtAudio::DeviceInfo temp = self->_rt->getDeviceInfo(device);
     
-    printf("1\n");
     PyObject *obj = _PyObject_New(&pyrtaudio_PyRtAudioDeviceInfoType);
-    printf("2\n");
     PyObject_Init(obj, &pyrtaudio_PyRtAudioDeviceInfoType);
-    printf("3\n");
     PyRtAudioDeviceInfoObject *o = (PyRtAudioDeviceInfoObject *) obj;
-    printf("4\n");
-
+    
+    //copy the info struct to our own object
     RtAudio::DeviceInfo *info = new RtAudio::DeviceInfo;
     *info = temp;
     o->_info = info;
-    printf("5\n");
+
     return obj;
 }
 
