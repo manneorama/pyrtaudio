@@ -40,6 +40,13 @@ typedef struct {
     PyObject *_cb;
 } PyRtAudioObject;
 
+static PyObject *PyRtAudio_SINT8;
+static PyObject *PyRtAudio_SINT16;
+static PyObject *PyRtAudio_SINT24;
+static PyObject *PyRtAudio_SINT32;
+static PyObject *PyRtAudio_FLOAT32;
+static PyObject *PyRtAudio_FLOAT64;
+
 static int __pyrtaudio_renderCallback(void *outputBuffer, void *inputBuffer,
         unsigned int frames, double streamTime, RtAudioStreamStatus status,
         void *userData) {
@@ -162,6 +169,16 @@ PyRtAudio_getStreamSampleRate(PyRtAudioObject *self) {
     return Py_BuildValue("I", sr);
 }
 
+static PyObject *
+PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args, PyObject *kwds) {
+    char const *fmt = "OOkIIOO";
+    PyObject *oparms, *iparms, *callback, *userdata;
+    unsigned int srate, bframes;
+    unsigned long format;
+
+
+}
+
 
 //instance variables
 //static PyMemberDef PyRtAudioObject_members[] = {
@@ -258,6 +275,30 @@ PyMODINIT_FUNC initpyrtaudio(void) {
 
     m = Py_InitModule3("pyrtaudio", pyrtaudio_functions, "RtAudio python bindings");
     if (m == NULL) return;
+
+    PyRtAudio_SINT8 = PyLong_FromUnsignedLong(RTAUDIO_SINT8);
+    PyModule_AddObject(m, "RTAUDIO_SINT8", PyRtAudio_SINT8);
+    Py_INCREF(PyRtAudio_SINT8);
+
+    PyRtAudio_SINT16 = PyLong_FromUnsignedLong(RTAUDIO_SINT16);
+    PyModule_AddObject(m, "RTAUDIO_SINT16", PyRtAudio_SINT16);
+    Py_INCREF(PyRtAudio_SINT16);
+
+    PyRtAudio_SINT24 = PyLong_FromUnsignedLong(RTAUDIO_SINT24);
+    PyModule_AddObject(m, "RTAUDIO_SINT24", PyRtAudio_SINT24);
+    Py_INCREF(PyRtAudio_SINT24);
+
+    PyRtAudio_SINT32 = PyLong_FromUnsignedLong(RTAUDIO_SINT32);
+    PyModule_AddObject(m, "RTAUDIO_SINT32", PyRtAudio_SINT32);
+    Py_INCREF(PyRtAudio_SINT32);
+
+    PyRtAudio_FLOAT32 = PyLong_FromUnsignedLong(RTAUDIO_FLOAT32);
+    PyModule_AddObject(m, "RTAUDIO_FLOAT32", PyRtAudio_FLOAT32);
+    Py_INCREF(PyRtAudio_FLOAT32);
+
+    PyRtAudio_FLOAT64 = PyLong_FromUnsignedLong(RTAUDIO_FLOAT64);
+    PyModule_AddObject(m, "RTAUDIO_FLOAT64", PyRtAudio_FLOAT64);
+    Py_INCREF(PyRtAudio_FLOAT64);
 
     Py_INCREF(&pyrtaudio_PyRtAudioType);
     PyModule_AddObject(m, "RtAudio", 
