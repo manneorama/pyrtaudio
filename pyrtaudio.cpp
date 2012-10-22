@@ -176,7 +176,30 @@ PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args, PyObject *kwds) {
     unsigned int srate, bframes;
     unsigned long format;
 
+    if (!PyArg_ParseTuple(args, fmt, oparms, iparms, &format, &srate, &bframes, callback, userdata))
+        return NULL;
 
+    bool hasOutputParams = PyDict_Check(oparms);
+    bool hasInputParams = PyDict_Check(iparms);
+
+    RtAudio::StreamParameters *inputParams = NULL;
+    RtAudio::StreamParameters *outputParams = NULL;
+    if (hasOuputParams && !hasInputParams) {
+        outputParams = new RtAudio::StreamParameters;
+    } else if (!hasOutputParams && hasInputParams) {
+        inputParams = new RtAudio::StreamParameters;
+    } else if (hasOuputParams && hasInputParams) {
+        outputParams = new RtAudio::StreamParameters;
+        inputParams = new RtAudio::StreamParameters;
+    } else { // !hasOutputParams && !hasInputParams
+        return NULL;
+    }
+
+    if (outputParams) delete outputParams;
+    if (inputParams)  delete inputParams;
+
+    Py_INCREF(Py_None);
+    return Py_None;
 }
 
 
