@@ -184,11 +184,11 @@ PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args, PyObject *kwds) {
 
     RtAudio::StreamParameters *inputParams = NULL;
     RtAudio::StreamParameters *outputParams = NULL;
-    if (hasOuputParams && !hasInputParams) {
+    if (hasOutputParams && !hasInputParams) {
         outputParams = new RtAudio::StreamParameters;
     } else if (!hasOutputParams && hasInputParams) {
         inputParams = new RtAudio::StreamParameters;
-    } else if (hasOuputParams && hasInputParams) {
+    } else if (hasOutputParams && hasInputParams) {
         outputParams = new RtAudio::StreamParameters;
         inputParams = new RtAudio::StreamParameters;
     } else { // !hasOutputParams && !hasInputParams
