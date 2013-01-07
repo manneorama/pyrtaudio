@@ -170,17 +170,19 @@ PyRtAudio_getStreamSampleRate(PyRtAudioObject *self) {
 }
 
 static PyObject *
-PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args, PyObject *kwds) {
+PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args) {
     char const *fmt = "OOkIIOO";
-    PyObject *oparms, *iparms, *callback, *userdata;
+    PyObject oparms, iparms, callback, userdata;
     unsigned int srate, bframes;
     unsigned long format;
 
-    if (!PyArg_ParseTuple(args, fmt, oparms, iparms, &format, &srate, &bframes, callback, userdata))
+    if (!PyArg_ParseTuple(args, fmt, &oparms, &iparms, &format, &srate, &bframes, &callback, &userdata))
         return NULL;
 
-    bool hasOutputParams = PyDict_Check(oparms);
-    bool hasInputParams = PyDict_Check(iparms);
+    int hasOutputParams = PyDict_Check(&oparms);
+    int hasInputParams = PyDict_Check(&iparms);
+
+    printf("%d, %d\n", hasOutputParams, hasInputParams);
 
     RtAudio::StreamParameters *inputParams = NULL;
     RtAudio::StreamParameters *outputParams = NULL;
@@ -229,6 +231,8 @@ static PyMethodDef PyRtAudioObject_methods[] = {
         METH_NOARGS, "Return the current stream latency"},
     {"getStreamSampleRate", (PyCFunction) PyRtAudio_getStreamSampleRate,
         METH_NOARGS, "Return the current stream sample rate"},
+    {"openStream", (PyCFunction) PyRtAudio_openStream,
+        METH_VARARGS, "Open an audio stream"},
     {NULL}
 };
 
