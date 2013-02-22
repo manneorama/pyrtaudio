@@ -190,8 +190,6 @@ PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args) {
     if (!PyArg_ParseTuple(args, fmt, &oparms, &iparms, &format, &srate, &bframes, &callback))
         return NULL;
 
-    printf("%d %d %ld\n", srate, bframes, format);
-
     if (!PyCallable_Check(callback))
         return NULL;
     Py_XINCREF(callback);
