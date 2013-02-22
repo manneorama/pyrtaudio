@@ -190,17 +190,21 @@ PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args) {
     if (!PyArg_ParseTuple(args, fmt, &oparms, &iparms, &format, &srate, &bframes, &callback))
         return NULL;
 
-    if (!PyCallable_Check(callback))
+    if (!PyCallable_Check(callback)) {
+        PyErr_SetString(PyExc_TypeError, "Callback parameter must be callable");
         return NULL;
+    }
+
     Py_XINCREF(callback);
     Py_XDECREF(self->_cb);
     self->_cb = callback;
 
-    printf("nionfioewnfioewnfiownefionweio\n");
     int hasOutputParams = PyDict_CheckExact(oparms);
     int hasInputParams = PyDict_CheckExact(iparms);
-    if (!hasOutputParams && !hasInputParams)
+    if (!hasOutputParams && !hasInputParams) {
+        PyErr_SetString(PyExc_TypeError, "No input or output parameters given");
         return NULL;
+    }
 
     RtAudio::StreamParameters *inputParams = NULL;
     RtAudio::StreamParameters *outputParams = NULL;
@@ -210,7 +214,6 @@ PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args) {
     if (hasInputParams)
         inputParams = populateStreamParameters(iparms);
 
-    printf("soooon\n");
     RtAudioCallback cb;
     if (outputParams && !inputParams)
         cb = __pyrtaudio_renderCallback;
@@ -218,14 +221,8 @@ PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args) {
         cb = __pyrtaudio_captureCallback;
     else if (outputParams && inputParams)
         cb = __pyrtaudio_duplexCallback;
-    else
-        return NULL;
-    printf("nujaevlar\n");
 
-    //TODO open the stream
     self->_rt->openStream(outputParams, inputParams, format, srate, &bframes, cb);
-
-    printf("fnfwifew\n");
 
     if (outputParams) delete outputParams;
     if (inputParams)  delete inputParams;
@@ -236,24 +233,20 @@ PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args) {
 
 static PyObject *
 PyRtAudio_startStream(PyRtAudioObject *self) {
-    if (!self->_rt->isStreamOpen())
+    if (!self->_rt->isStreamOpen()) {
+        PyErr_SetString(PyExc_RuntimeError, "No open streams");
         return NULL; //openStream was not called
-    if (self->_rt->isStreamRunning())
+    }
+    if (self->_rt->isStreamRunning()) {
+        PyErr_SetString(PyExc_RuntimeError, "Stream already running");
         return NULL; //stream is already running
+    }
 
     self->_rt->startStream();
 
     Py_INCREF(Py_None);
     return Py_None;
 }
-
-
-//instance variables
-//static PyMemberDef PyRtAudioObject_members[] = {
-//    {NULL}
-//};
-
-
 
 static PyMethodDef PyRtAudioObject_methods[] = {
     {"getDeviceCount", (PyCFunction) PyRtAudio_getDeviceCount,
