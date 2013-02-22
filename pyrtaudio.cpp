@@ -23,6 +23,7 @@
 #include <stdio.h>
 
 #include "RtAudio.h"
+#include "pyrtutils.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,9 +51,17 @@ static PyObject *PyRtAudio_FLOAT64;
 static int __pyrtaudio_renderCallback(void *outputBuffer, void *inputBuffer,
         unsigned int frames, double streamTime, RtAudioStreamStatus status,
         void *userData) {
-    PYGILSTATE_ACQUIRE;
+    //PYGILSTATE_ACQUIRE;
     //TODO
-    PYGILSTATE_RELEASE;
+    unsigned short *buf = (unsigned short *) outputBuffer;
+    for (unsigned int i = 0; i < frames; ++i) {
+        *buf++ = 0;
+        *buf++ = 0;
+    }
+    
+
+    //PYGILSTATE_RELEASE;
+
     return 0;
 }
 
@@ -60,6 +69,7 @@ static int __pyrtaudio_captureCallback(void *outputBuffer, void *inputBuffer,
         unsigned int frames, double streamTime, RtAudioStreamStatus status,
         void *userData) {
     PYGILSTATE_ACQUIRE;
+    //TODO
     PYGILSTATE_RELEASE;
     return 0;
 }
@@ -68,6 +78,7 @@ static int __pyrtaudio_duplexCallback(void *outputBuffer, void *inputBuffer,
         unsigned int frames, double streamTime, RtAudioStreamStatus status,
         void *userData) {
     PYGILSTATE_ACQUIRE;
+    //TODO
     PYGILSTATE_RELEASE;
     return 0;
 }
@@ -171,34 +182,68 @@ PyRtAudio_getStreamSampleRate(PyRtAudioObject *self) {
 
 static PyObject *
 PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args) {
-    char const *fmt = "OOkIIOO";
-    PyObject oparms, iparms, callback, userdata;
+    char const *fmt = "OOkIIO";
+    PyObject *oparms, *iparms, *callback;
     unsigned int srate, bframes;
     unsigned long format;
 
-    if (!PyArg_ParseTuple(args, fmt, &oparms, &iparms, &format, &srate, &bframes, &callback, &userdata))
+    if (!PyArg_ParseTuple(args, fmt, &oparms, &iparms, &format, &srate, &bframes, &callback))
         return NULL;
 
-    int hasOutputParams = PyDict_Check(&oparms);
-    int hasInputParams = PyDict_Check(&iparms);
+    printf("%d %d %ld\n", srate, bframes, format);
 
-    printf("%d, %d\n", hasOutputParams, hasInputParams);
+    if (!PyCallable_Check(callback))
+        return NULL;
+    Py_XINCREF(callback);
+    Py_XDECREF(self->_cb);
+    self->_cb = callback;
+
+    printf("nionfioewnfioewnfiownefionweio\n");
+    int hasOutputParams = PyDict_CheckExact(oparms);
+    int hasInputParams = PyDict_CheckExact(iparms);
+    if (!hasOutputParams && !hasInputParams)
+        return NULL;
 
     RtAudio::StreamParameters *inputParams = NULL;
     RtAudio::StreamParameters *outputParams = NULL;
-    if (hasOutputParams && !hasInputParams) {
-        outputParams = new RtAudio::StreamParameters;
-    } else if (!hasOutputParams && hasInputParams) {
-        inputParams = new RtAudio::StreamParameters;
-    } else if (hasOutputParams && hasInputParams) {
-        outputParams = new RtAudio::StreamParameters;
-        inputParams = new RtAudio::StreamParameters;
-    } else { // !hasOutputParams && !hasInputParams
+
+    if (hasOutputParams)
+        outputParams = populateStreamParameters(oparms);
+    if (hasInputParams)
+        inputParams = populateStreamParameters(iparms);
+
+    printf("soooon\n");
+    RtAudioCallback cb;
+    if (outputParams && !inputParams)
+        cb = __pyrtaudio_renderCallback;
+    else if (!outputParams && inputParams)
+        cb = __pyrtaudio_captureCallback;
+    else if (outputParams && inputParams)
+        cb = __pyrtaudio_duplexCallback;
+    else
         return NULL;
-    }
+    printf("nujaevlar\n");
+
+    //TODO open the stream
+    self->_rt->openStream(outputParams, inputParams, format, srate, &bframes, cb);
+
+    printf("fnfwifew\n");
 
     if (outputParams) delete outputParams;
     if (inputParams)  delete inputParams;
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+static PyObject *
+PyRtAudio_startStream(PyRtAudioObject *self) {
+    if (!self->_rt->isStreamOpen())
+        return NULL; //openStream was not called
+    if (self->_rt->isStreamRunning())
+        return NULL; //stream is already running
+
+    self->_rt->startStream();
 
     Py_INCREF(Py_None);
     return Py_None;
@@ -233,6 +278,8 @@ static PyMethodDef PyRtAudioObject_methods[] = {
         METH_NOARGS, "Return the current stream sample rate"},
     {"openStream", (PyCFunction) PyRtAudio_openStream,
         METH_VARARGS, "Open an audio stream"},
+    {"startStream", (PyCFunction) PyRtAudio_startStream,
+        METH_NOARGS, "Start an open audio stream"},
     {NULL}
 };
 
