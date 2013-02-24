@@ -49,6 +49,7 @@ typedef struct {
 typedef struct {
     __internal_stream_info *output;
     __internal_stream_info *input;
+    PyObject *callback;
 } __input_output_info;
 
 static PyObject *PyRtAudio_SINT8;
@@ -61,12 +62,20 @@ static PyObject *PyRtAudio_FLOAT64;
 static int __pyrtaudio_renderCallback(void *outputBuffer, void *inputBuffer,
         unsigned int frames, double streamTime, RtAudioStreamStatus status,
         void *userData) {
-//    PyObject *byte_array = PyByteArray_FromStringAndSize((char *) outputBuffer, frames
-    PYGILSTATE_ACQUIRE;
-        
+    __input_output_info *i = (__input_output_info *) userData;
+    PyObject *byte_array = PyByteArray_FromStringAndSize((char *) outputBuffer, frames * i->output->channels * i->output->format);
+    PyObject *argslist = Py_BuildValue("(O)", byte_array);
 
+    // call the user specified callback
+    PYGILSTATE_ACQUIRE;
+    PyObject *result = PyEval_CallObject(i->callback, argslist);
     PYGILSTATE_RELEASE;
 
+    //do sth intelligent
+
+    Py_DECREF(result);
+    Py_DECREF(argslist);
+    Py_DECREF(byte_array);
     return 0;
 }
 
@@ -163,8 +172,16 @@ PyRtAudio_isStreamOpen(PyRtAudioObject *self) {
 static PyObject *
 PyRtAudio_isStreamRunning(PyRtAudioObject *self) {
     bool isIt = self->_rt->isStreamRunning();
-    if (isIt) return Py_BuildValue("O", Py_False);
+    if (isIt) return Py_BuildValue("O", Py_True);
     return Py_BuildValue("O", Py_False);
+}
+
+static PyObject *
+PyRtAudio_stopStream(PyRtAudioObject *self) {
+    bool isIt = self->_rt->isStreamRunning();
+    if (isIt) self->_rt->stopStream();
+    Py_INCREF(Py_None);
+    return Py_None;
 }
 
 static PyObject *
@@ -217,6 +234,7 @@ PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args) {
     __input_output_info *ioInfo = new __input_output_info;
     ioInfo->output = NULL;
     ioInfo->input = NULL;
+    ioInfo->callback = callback;
     if (hasOutputParams) { 
         outputParams = populateStreamParameters(oparms);
         ioInfo->output = new __internal_stream_info;
