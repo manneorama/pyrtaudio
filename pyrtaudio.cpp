@@ -41,6 +41,16 @@ typedef struct {
     PyObject *_cb;
 } PyRtAudioObject;
 
+typedef struct {
+    unsigned int channels;
+    unsigned long format;
+} __internal_stream_info;
+
+typedef struct {
+    __internal_stream_info *output;
+    __internal_stream_info *input;
+} __input_output_info;
+
 static PyObject *PyRtAudio_SINT8;
 static PyObject *PyRtAudio_SINT16;
 static PyObject *PyRtAudio_SINT24;
@@ -51,16 +61,11 @@ static PyObject *PyRtAudio_FLOAT64;
 static int __pyrtaudio_renderCallback(void *outputBuffer, void *inputBuffer,
         unsigned int frames, double streamTime, RtAudioStreamStatus status,
         void *userData) {
-    //PYGILSTATE_ACQUIRE;
-    //TODO
-    unsigned short *buf = (unsigned short *) outputBuffer;
-    for (unsigned int i = 0; i < frames; ++i) {
-        *buf++ = 0;
-        *buf++ = 0;
-    }
-    
+//    PyObject *byte_array = PyByteArray_FromStringAndSize((char *) outputBuffer, frames
+    PYGILSTATE_ACQUIRE;
+        
 
-    //PYGILSTATE_RELEASE;
+    PYGILSTATE_RELEASE;
 
     return 0;
 }
@@ -209,20 +214,32 @@ PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args) {
     RtAudio::StreamParameters *inputParams = NULL;
     RtAudio::StreamParameters *outputParams = NULL;
 
-    if (hasOutputParams)
+    __input_output_info *ioInfo = new __input_output_info;
+    ioInfo->output = NULL;
+    ioInfo->input = NULL;
+    if (hasOutputParams) { 
         outputParams = populateStreamParameters(oparms);
-    if (hasInputParams)
+        ioInfo->output = new __internal_stream_info;
+        ioInfo->output->channels = outputParams->nChannels;
+        ioInfo->output->format = format;
+    }
+    if (hasInputParams) {
         inputParams = populateStreamParameters(iparms);
+        ioInfo->input = new __internal_stream_info;
+        ioInfo->input->channels = inputParams->nChannels;
+        ioInfo->input->format = format;
+    }
 
     RtAudioCallback cb;
-    if (outputParams && !inputParams)
+    if (outputParams && !inputParams) 
         cb = __pyrtaudio_renderCallback;
-    else if (!outputParams && inputParams)
+    else if (!outputParams && inputParams) 
         cb = __pyrtaudio_captureCallback;
     else if (outputParams && inputParams)
         cb = __pyrtaudio_duplexCallback;
 
-    self->_rt->openStream(outputParams, inputParams, format, srate, &bframes, cb);
+    
+    self->_rt->openStream(outputParams, inputParams, format, srate, &bframes, cb, (void *) ioInfo);
 
     if (outputParams) delete outputParams;
     if (inputParams)  delete inputParams;
