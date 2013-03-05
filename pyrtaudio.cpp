@@ -34,23 +34,27 @@ extern "C" {
 
 #define PYGILSTATE_RELEASE do { PyGILState_Release(gstate); } while (0)
 
+typedef struct {
+    unsigned int channels;
+    unsigned long format;
+} streamInfo;
+
+typedef struct {
+    streamInfo *output;
+    streamInfo *input;
+} inputOutputInfo;
+
 // pyrtaudio.RtAudio()
 typedef struct {
     PyObject_HEAD
     RtAudio *_rt;
     PyObject *_cb;
+    PyObject *_inputBuffer;
+    PyObject *_outputBuffer;
+    inputOutputInfo *_info;
 } PyRtAudioObject;
 
-typedef struct {
-    unsigned int channels;
-    unsigned long format;
-} __internal_stream_info;
-
-typedef struct {
-    __internal_stream_info *output;
-    __internal_stream_info *input;
-    PyObject *callback;
-} __input_output_info;
+static PyObject *arrayModuleHandle;
 
 static PyObject *PyRtAudio_SINT8;
 static PyObject *PyRtAudio_SINT16;
@@ -62,21 +66,43 @@ static PyObject *PyRtAudio_FLOAT64;
 static int __pyrtaudio_renderCallback(void *outputBuffer, void *inputBuffer,
         unsigned int frames, double streamTime, RtAudioStreamStatus status,
         void *userData) {
-    __input_output_info *i = (__input_output_info *) userData;
-    PyObject *byte_array = PyByteArray_FromStringAndSize((char *) outputBuffer, frames * i->output->channels * i->output->format);
-    PyObject *argslist = Py_BuildValue("(O)", byte_array);
+    PyRtAudioObject *self = (PyRtAudioObject *) userData;
+    PyObject *argslist = Py_BuildValue("(O)", self->_outputBuffer);
 
     // call the user specified callback
     PYGILSTATE_ACQUIRE;
-    PyObject *result = PyEval_CallObject(i->callback, argslist);
+    PyObject *result = PyEval_CallObject(self->_cb, argslist);
     PYGILSTATE_RELEASE;
 
-    //do sth intelligent
+    // fill the other buffer from the python array
+    if (PyObject_CheckBuffer(self->_outputBuffer)) {
+        Py_buffer *buf;
+        int rc = PyObject_GetBuffer(self->_outputBuffer, buf, PyBUF_SIMPLE);
+        if (rc == 0)
+            ;
+        else
+            printf("ermahgerhd11111!1!!!!!!!\n");
+    } else
+        printf("fuckme\n");
+
+    int returnValue = getReturnValue(result);
+    if (returnValue) {
+        if (self->_info->input)
+            delete self->_info->input;
+        if (self->_info->output)
+            delete self->_info->output;
+        if (self->_info)
+            delete self->_info;
+        Py_XDECREF(self->_cb);
+        self->_cb = NULL;
+        self->_info = NULL;
+        Py_DECREF(self->_inputBuffer);
+        Py_DECREF(self->_outputBuffer);
+    }
 
     Py_DECREF(result);
     Py_DECREF(argslist);
-    Py_DECREF(byte_array);
-    return 0;
+    return returnValue;
 }
 
 static int __pyrtaudio_captureCallback(void *outputBuffer, void *inputBuffer,
@@ -102,7 +128,7 @@ static void
 PyRtAudio_dealloc(PyRtAudioObject *self) {
     if (self->_rt->isStreamRunning()) self->_rt->stopStream();
     if (self->_rt->isStreamOpen()) self->_rt->closeStream();
-    delete self->_rt;
+        delete self->_rt;
     self->ob_type->tp_free((PyObject *) self);
 }
 
@@ -114,6 +140,7 @@ PyRtAudio_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
     if (self != NULL) {
         self->_rt = new RtAudio;
         self->_cb = NULL;
+        self->_info = NULL;
     }
     
     return (PyObject *) self;
@@ -180,6 +207,20 @@ static PyObject *
 PyRtAudio_stopStream(PyRtAudioObject *self) {
     bool isIt = self->_rt->isStreamRunning();
     if (isIt) self->_rt->stopStream();
+
+    if (self->_info->input)
+        delete self->_info->input;
+    if (self->_info->output)
+        delete self->_info->output;
+    if (self->_info)
+        delete self->_info;
+    Py_XDECREF(self->_cb);
+    self->_cb = NULL;
+    self->_info = NULL;
+
+    Py_DECREF(self->_inputBuffer);
+    Py_DECREF(self->_outputBuffer);
+
     Py_INCREF(Py_None);
     return Py_None;
 }
@@ -221,6 +262,32 @@ PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args) {
     Py_XDECREF(self->_cb);
     self->_cb = callback;
 
+    printf("all good\n");
+    PyObject *arrayDict = PyModule_GetDict(arrayModuleHandle);
+    PyObject *arrayType = PyDict_GetItemString(arrayDict, "array");
+    char typecode;
+    switch (format) {
+        case RTAUDIO_SINT8:
+            typecode = 'b';
+            break;
+        case RTAUDIO_SINT16:
+            typecode = 'h';
+            break;
+        case RTAUDIO_SINT24:
+        case RTAUDIO_SINT32:
+            typecode = 'l';
+            break;
+        case RTAUDIO_FLOAT32:
+            typecode = 'f';
+            break;
+        case RTAUDIO_FLOAT64:
+            typecode = 'd';
+            break;
+        default:
+            break;
+    }
+
+    printf("all good 2\n");
     int hasOutputParams = PyDict_CheckExact(oparms);
     int hasInputParams = PyDict_CheckExact(iparms);
     if (!hasOutputParams && !hasInputParams) {
@@ -231,23 +298,26 @@ PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args) {
     RtAudio::StreamParameters *inputParams = NULL;
     RtAudio::StreamParameters *outputParams = NULL;
 
-    __input_output_info *ioInfo = new __input_output_info;
-    ioInfo->output = NULL;
-    ioInfo->input = NULL;
-    ioInfo->callback = callback;
+    inputOutputInfo *info = new inputOutputInfo;
+    self->_info = info;
+    info->output = NULL;
+    info->input = NULL;
     if (hasOutputParams) { 
+        //this needs py_buildvalue
+        //self->_outputBuffer = PyObject_CallFunction(arrayType, &typecode);
         outputParams = populateStreamParameters(oparms);
-        ioInfo->output = new __internal_stream_info;
-        ioInfo->output->channels = outputParams->nChannels;
-        ioInfo->output->format = format;
+        info->output = new streamInfo;
+        info->output->channels = outputParams->nChannels;
+        info->output->format = format;
     }
     if (hasInputParams) {
+        //self->_inputBuffer = PyObject_CallFunction(arrayType, &typecode);
         inputParams = populateStreamParameters(iparms);
-        ioInfo->input = new __internal_stream_info;
-        ioInfo->input->channels = inputParams->nChannels;
-        ioInfo->input->format = format;
+        info->input = new streamInfo;
+        info->input->channels = inputParams->nChannels;
+        info->input->format = format;
     }
-
+    printf("all good 3\n");
     RtAudioCallback cb;
     if (outputParams && !inputParams) 
         cb = __pyrtaudio_renderCallback;
@@ -257,11 +327,13 @@ PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args) {
         cb = __pyrtaudio_duplexCallback;
 
     
-    self->_rt->openStream(outputParams, inputParams, format, srate, &bframes, cb, (void *) ioInfo);
+
+    self->_rt->openStream(outputParams, inputParams, format, srate, &bframes, cb, (void *) self);
 
     if (outputParams) delete outputParams;
     if (inputParams)  delete inputParams;
 
+    printf("all good 4\n");
     Py_INCREF(Py_None);
     return Py_None;
 }
@@ -365,6 +437,8 @@ static PyMethodDef pyrtaudio_functions[] = {
 #define PyMODINIT_FUNC void
 #endif
 PyMODINIT_FUNC initpyrtaudio(void) {
+    arrayModuleHandle = PyImport_ImportModule("array");
+
     PyObject *m;
 
     // this is necessary for the RtAudio class to be able to

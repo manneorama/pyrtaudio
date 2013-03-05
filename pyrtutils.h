@@ -4,6 +4,10 @@
 #include <Python.h>
 #include "RtAudio.h"
 
+void setRuntimeExceptionWithMessage(char const *message) {
+    PyErr_SetString(PyExc_RuntimeError, message);
+}
+
 RtAudio::StreamParameters *populateStreamParameters(PyObject *dict) {
     PyObject *device = PyDict_GetItemString(dict, "device_id");
     PyObject *channels = PyDict_GetItemString(dict, "channels");
@@ -20,5 +24,15 @@ RtAudio::StreamParameters *populateStreamParameters(PyObject *dict) {
 
     return params;
 }
+
+long getReturnValue(PyObject *returnValue) {
+    if (!PyInt_CheckExact(returnValue)) {
+        setRuntimeExceptionWithMessage("Callback returned non-integer type");
+        return -1;
+    }
+
+    return PyInt_AsLong(returnValue); 
+}
+
 
 #endif
