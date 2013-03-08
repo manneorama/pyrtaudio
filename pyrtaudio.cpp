@@ -68,29 +68,32 @@ static int __pyrtaudio_renderCallback(void *outputBuffer, void *inputBuffer,
         void *userData) {
     PYGILSTATE_ACQUIRE;
     PyRtAudioObject *self = (PyRtAudioObject *) userData;
-    int returnValue = 0;
 
     PyObject *result = PyEval_CallObject(self->_cb, NULL);
     if (Py_None == result) {
-        returnValue = 1; //TODO cleanup
+        PYGILSTATE_RELEASE;
+        return 1; //TODO cleanup
     }
     if (!PyObject_CheckBuffer(result)) {
-        returnValue = 2; //TODO raise an exception and cleanup
+        PYGILSTATE_RELEASE;
+        return 2; //TODO raise an exception and cleanup
     }
 
     Py_buffer *view = (Py_buffer *) malloc(sizeof(*view));
     int error = PyObject_GetBuffer(result, view, PyBUF_SIMPLE);
     if (error) {
-        returnValue = 2; //TODO raise an exception and cleanup
+        free(view);
+        PYGILSTATE_RELEASE;
+        return 2; //TODO raise an exception and cleanup
     }
 
-    if (0 == returnValue)
-        memcpy(outputBuffer, view->buf, view->len);
+    memcpy(outputBuffer, view->buf, view->len);
 
     Py_DECREF(result);
     PyBuffer_Release(view);
+    free(view);
     PYGILSTATE_RELEASE;
-    return returnValue;
+    return 0;
 }
 
 static int __pyrtaudio_captureCallback(void *outputBuffer, void *inputBuffer,
