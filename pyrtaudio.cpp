@@ -49,12 +49,8 @@ typedef struct {
     PyObject_HEAD
     RtAudio *_rt;
     PyObject *_cb;
-    PyObject *_inputBuffer;
-    PyObject *_outputBuffer;
     inputOutputInfo *_info;
 } PyRtAudioObject;
-
-static PyObject *arrayModuleHandle;
 
 static PyObject *PyRtAudio_SINT8;
 static PyObject *PyRtAudio_SINT16;
@@ -209,9 +205,6 @@ PyRtAudio_stopStream(PyRtAudioObject *self) {
     self->_cb = NULL;
     self->_info = NULL;
 
-    Py_DECREF(self->_inputBuffer);
-    Py_DECREF(self->_outputBuffer);
-
     Py_INCREF(Py_None);
     return Py_None;
 }
@@ -263,22 +256,17 @@ PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args) {
     RtAudio::StreamParameters *inputParams = NULL;
     RtAudio::StreamParameters *outputParams = NULL;
 
-    char typecode = getTypecodeForPythonArray(format);
-    PyObject *arrayDict = PyModule_GetDict(arrayModuleHandle);
-    PyObject *arrayType = PyDict_GetItemString(arrayDict, "array");
     inputOutputInfo *info = new inputOutputInfo;
     self->_info = info;
     info->output = NULL;
     info->input = NULL;
     if (hasOutputParams) { 
-        self->_outputBuffer = PyObject_CallFunction(arrayType, "c", typecode);
         outputParams = populateStreamParameters(oparms);
         info->output = new streamInfo;
         info->output->channels = outputParams->nChannels;
         info->output->format = format;
     }
     if (hasInputParams) {
-        self->_inputBuffer = PyObject_CallFunction(arrayType, "c", typecode);
         inputParams = populateStreamParameters(iparms);
         info->input = new streamInfo;
         info->input->channels = inputParams->nChannels;
@@ -401,8 +389,6 @@ static PyMethodDef pyrtaudio_functions[] = {
 #define PyMODINIT_FUNC void
 #endif
 PyMODINIT_FUNC initpyrtaudio(void) {
-    arrayModuleHandle = PyImport_ImportModule("array");
-
     PyObject *m;
 
     // this is necessary for the RtAudio class to be able to
