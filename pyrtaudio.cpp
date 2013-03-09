@@ -34,24 +34,19 @@ extern "C" {
 
 #define PYGILSTATE_RELEASE do { PyGILState_Release(gstate); } while (0)
 
-typedef struct {
-    unsigned int channels;
-    unsigned long format;
-} streamInfo;
-
-typedef struct {
-    streamInfo *output;
-    streamInfo *input;
-} inputOutputInfo;
-
 // pyrtaudio.RtAudio()
 typedef struct {
     PyObject_HEAD
-    RtAudio *_rt;
-    PyObject *_cb;
-    inputOutputInfo *_info;
+    RtAudio *_rt;               // the RtAudio instance
+    PyObject *_cb;              // the user defined callback
+    // storing buffer pointers here avoids memory allocation inside the callbacks
+    Py_buffer *_outputView;     // pre-allocated space for an output buffer
+    Py_buffer *_inputView;      // pre-allocated space for an input buffer
+    unsigned long _expectedOutputBufferLength;
+    unsigned long _expectedInputBufferLength;
 } PyRtAudioObject;
 
+// format flags
 static PyObject *PyRtAudio_SINT8;
 static PyObject *PyRtAudio_SINT16;
 static PyObject *PyRtAudio_SINT24;
@@ -59,39 +54,61 @@ static PyObject *PyRtAudio_SINT32;
 static PyObject *PyRtAudio_FLOAT32;
 static PyObject *PyRtAudio_FLOAT64;
 
+// this function is called by RtAudio when operating in render-only mode
 static int __pyrtaudio_renderCallback(void *outputBuffer, void *inputBuffer,
         unsigned int frames, double streamTime, RtAudioStreamStatus status,
         void *userData) {
+    int retcode = 0;
+    int error = 0;
+    PyObject *result;
+    Py_buffer *view;
+
     PYGILSTATE_ACQUIRE;
     PyRtAudioObject *self = (PyRtAudioObject *) userData;
+    view = self->_outputView;
 
-    PyObject *result = PyEval_CallObject(self->_cb, NULL);
+    // call the user specified callback
+    result = PyEval_CallObject(self->_cb, NULL);
     if (Py_None == result) {
-        PYGILSTATE_RELEASE;
-        return 1; //TODO cleanup
+        retcode = 1; 
+        goto cleanup_none_returned;
     }
+    // make sure that the returned object supports the buffer interface
     if (!PyObject_CheckBuffer(result)) {
-        PYGILSTATE_RELEASE;
-        return 2; //TODO raise an exception and cleanup
+        PyErr_SetString(PyExc_BufferError, "The object returned from the callback does not support the buffer interface");
+        retcode = 2;
+        goto cleanup_not_a_buffer;
     }
-
-    Py_buffer *view = (Py_buffer *) malloc(sizeof(*view));
-    int error = PyObject_GetBuffer(result, view, PyBUF_SIMPLE);
+    // extract the buffer from the object
+    error = PyObject_GetBuffer(result, view, PyBUF_SIMPLE);
     if (error) {
-        free(view);
-        PYGILSTATE_RELEASE;
-        return 2; //TODO raise an exception and cleanup
+        PyErr_SetString(PyExc_BufferError, "Could not extract buffer info from the returned object");
+        retcode = 2; //TODO raise an exception and cleanup
+        goto cleanup_could_not_extract;
     }
-
+    // check length sanity
+    if (self->_expectedOutputBufferLength != view->len) {
+        PyErr_SetString(PyExc_BufferError, "Got buffer of unexpected length");
+        retcode = 2;
+        goto cleanup_unexpected_length;
+    }
+    // fill output buffer
     memcpy(outputBuffer, view->buf, view->len);
 
-    Py_DECREF(result);
+    // cleanup
+    cleanup_unexpected_length:
     PyBuffer_Release(view);
-    free(view);
+    cleanup_could_not_extract:
+    cleanup_not_a_buffer:
+    cleanup_none_returned:
+    Py_DECREF(result);
     PYGILSTATE_RELEASE;
-    return 0;
+    // no need to free the memory used by view since it's allocated on
+    // instantiation of the RtAudio class in Python and freed on deallocation
+    return retcode;
 }
 
+// this function is called by RtAudio when operating in capture-only mode
 static int __pyrtaudio_captureCallback(void *outputBuffer, void *inputBuffer,
         unsigned int frames, double streamTime, RtAudioStreamStatus status,
         void *userData) {
@@ -101,6 +118,7 @@ static int __pyrtaudio_captureCallback(void *outputBuffer, void *inputBuffer,
     return 0;
 }
 
+// this function is called by RtAudio when operating in duplex mode
 static int __pyrtaudio_duplexCallback(void *outputBuffer, void *inputBuffer,
         unsigned int frames, double streamTime, RtAudioStreamStatus status,
         void *userData) {
@@ -116,6 +134,15 @@ PyRtAudio_dealloc(PyRtAudioObject *self) {
     if (self->_rt->isStreamRunning()) self->_rt->stopStream();
     if (self->_rt->isStreamOpen()) self->_rt->closeStream();
         delete self->_rt;
+
+    if (self->_outputView) free(self->_outputView);
+    if (self->_inputView) free(self->_inputView);
+
+    Py_XDECREF(self->_cb);
+    self->_cb = NULL;
+
+    self->_outputView = self->_inputView = NULL;
+
     self->ob_type->tp_free((PyObject *) self);
 }
 
@@ -127,7 +154,8 @@ PyRtAudio_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
     if (self != NULL) {
         self->_rt = new RtAudio;
         self->_cb = NULL;
-        self->_info = NULL;
+        self->_outputView = NULL;
+        self->_inputView = NULL;
     }
     
     return (PyObject *) self;
@@ -195,15 +223,13 @@ PyRtAudio_stopStream(PyRtAudioObject *self) {
     bool isIt = self->_rt->isStreamRunning();
     if (isIt) self->_rt->stopStream();
 
-    if (self->_info->input)
-        delete self->_info->input;
-    if (self->_info->output)
-        delete self->_info->output;
-    if (self->_info)
-        delete self->_info;
+    if (self->_outputView) free(self->_outputView);
+    if (self->_inputView) free(self->_inputView);
+
     Py_XDECREF(self->_cb);
     self->_cb = NULL;
-    self->_info = NULL;
+
+    self->_outputView = self->_inputView = NULL;
 
     Py_INCREF(Py_None);
     return Py_None;
@@ -256,23 +282,24 @@ PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args) {
     RtAudio::StreamParameters *inputParams = NULL;
     RtAudio::StreamParameters *outputParams = NULL;
 
-    inputOutputInfo *info = new inputOutputInfo;
-    self->_info = info;
-    info->output = NULL;
-    info->input = NULL;
+    self->_outputView = NULL;
+    self->_inputView = NULL;
     if (hasOutputParams) { 
         outputParams = populateStreamParameters(oparms);
-        info->output = new streamInfo;
-        info->output->channels = outputParams->nChannels;
-        info->output->format = format;
+        self->_expectedOutputBufferLength = widthFromFormat(format);
+        self->_expectedOutputBufferLength *= outputParams->nChannels;
+        self->_expectedOutputBufferLength *= bframes;
+        self->_outputView = (Py_buffer *) malloc(sizeof(*(self->_outputView)));
     }
     if (hasInputParams) {
         inputParams = populateStreamParameters(iparms);
-        info->input = new streamInfo;
-        info->input->channels = inputParams->nChannels;
-        info->input->format = format;
+        self->_expectedInputBufferLength = widthFromFormat(format);
+        self->_expectedInputBufferLength *= inputParams->nChannels;
+        self->_expectedInputBufferLength *= bframes;
+        self->_inputView = (Py_buffer *) malloc(sizeof(*(self->_inputView)));
     }
 
+    // decide which callback to use
     RtAudioCallback cb;
     if (outputParams && !inputParams) 
         cb = __pyrtaudio_renderCallback;

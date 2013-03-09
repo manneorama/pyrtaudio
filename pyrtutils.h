@@ -8,6 +8,31 @@ void setRuntimeExceptionWithMessage(char const *message) {
     PyErr_SetString(PyExc_RuntimeError, message);
 }
 
+
+inline unsigned int widthFromFormat(RtAudioFormat fmt) {
+    unsigned int w = 1;
+    switch (fmt) {
+        case RTAUDIO_SINT8:
+            w = 1;
+            break;
+        case RTAUDIO_SINT16:
+            w = 2;
+            break;
+        case RTAUDIO_SINT24:
+        case RTAUDIO_SINT32:
+        case RTAUDIO_FLOAT32:
+            w = 4;
+            break;
+        case RTAUDIO_FLOAT64:
+            w = 8;
+            break;
+        default:
+            w = 1;
+            break;
+    }
+    return w;
+}
+
 RtAudio::StreamParameters *populateStreamParameters(PyObject *dict) {
     PyObject *device = PyDict_GetItemString(dict, "device_id");
     PyObject *channels = PyDict_GetItemString(dict, "channels");
