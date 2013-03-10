@@ -59,7 +59,6 @@ static int __pyrtaudio_renderCallback(void *outputBuffer, void *inputBuffer,
         unsigned int frames, double streamTime, RtAudioStreamStatus status,
         void *userData) {
     int retcode = 0;
-    int error = 0;
     PyObject *result;
     Py_buffer *view;
 
@@ -69,29 +68,21 @@ static int __pyrtaudio_renderCallback(void *outputBuffer, void *inputBuffer,
 
     // call the user specified callback
     result = PyEval_CallObject(self->_cb, NULL);
-    if (Py_None == result) {
-        retcode = 1; 
-        goto cleanup_none_returned;
-    }
+    retcode = isNone(result);
+    if (retcode) goto cleanup_none_returned;
+
     // make sure that the returned object supports the buffer interface
-    if (!PyObject_CheckBuffer(result)) {
-        PyErr_SetString(PyExc_BufferError, "The object returned from the callback does not support the buffer interface");
-        retcode = 2;
-        goto cleanup_not_a_buffer;
-    }
+    retcode = isBuffer(result);
+    if (retcode) goto cleanup_not_a_buffer;
+
     // extract the buffer from the object
-    error = PyObject_GetBuffer(result, view, PyBUF_SIMPLE);
-    if (error) {
-        PyErr_SetString(PyExc_BufferError, "Could not extract buffer info from the returned object");
-        retcode = 2; //TODO raise an exception and cleanup
-        goto cleanup_could_not_extract;
-    }
+    retcode = getBuffer(result, &view);
+    if (retcode) goto cleanup_could_not_extract;
+
     // check length sanity
-    if (self->_expectedOutputBufferLength != view->len) {
-        PyErr_SetString(PyExc_BufferError, "Got buffer of unexpected length");
-        retcode = 2;
-        goto cleanup_unexpected_length;
-    }
+    retcode = checkLength(self->_expectedOutputBufferLength, view->len);
+    if (retcode) goto cleanup_unexpected_length;
+
     // fill output buffer
     memcpy(outputBuffer, view->buf, view->len);
 
@@ -286,6 +277,10 @@ PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args) {
     self->_inputView = NULL;
     if (hasOutputParams) { 
         outputParams = populateStreamParameters(oparms);
+        if (!outputParams) {
+            PyErr_SetString(PyExc_AttributeError, "Error in output parameters");
+            return NULL;
+        }
         self->_expectedOutputBufferLength = widthFromFormat(format);
         self->_expectedOutputBufferLength *= outputParams->nChannels;
         self->_expectedOutputBufferLength *= bframes;
@@ -293,6 +288,10 @@ PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args) {
     }
     if (hasInputParams) {
         inputParams = populateStreamParameters(iparms);
+        if (!inputParams) {
+            PyErr_SetString(PyExc_AttributeError, "Error in input parameters");
+            return NULL;
+        }
         self->_expectedInputBufferLength = widthFromFormat(format);
         self->_expectedInputBufferLength *= inputParams->nChannels;
         self->_expectedInputBufferLength *= bframes;

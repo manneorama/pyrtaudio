@@ -8,6 +8,38 @@ void setRuntimeExceptionWithMessage(char const *message) {
     PyErr_SetString(PyExc_RuntimeError, message);
 }
 
+inline int isNone(PyObject *o) {
+    if (Py_None == 0)
+        return 1;
+    return 0;
+}
+
+inline int isBuffer(PyObject *o) {
+    if (PyObject_CheckBuffer(o))
+        return 0;
+    PyErr_SetString(PyExc_BufferError, 
+            "The returned object does not support the buffer interface");
+    return 2;
+}
+
+inline int getBuffer(PyObject *o, Py_buffer **view) {
+    int error = PyObject_GetBuffer(o, *view, PyBUF_SIMPLE);
+    if (error) {
+        PyErr_SetString(PyExc_BufferError,
+                "Could not extract buffer from object");
+        return 2;
+    }
+    return 0;
+}
+
+inline int checkLength(unsigned long expected, Py_ssize_t actual) {
+    if (expected != actual) {
+        PyErr_SetString(PyExc_BufferError, 
+                "Got buffer of unexpected length");
+        return 2;
+    }
+    return 0;
+}
 
 inline unsigned int widthFromFormat(RtAudioFormat fmt) {
     unsigned int w = 1;
