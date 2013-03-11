@@ -307,7 +307,11 @@ PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args) {
     else if (outputParams && inputParams)
         cb = __pyrtaudio_duplexCallback;
 
-    self->_rt->openStream(outputParams, inputParams, format, srate, &bframes, cb, (void *) self);
+    try {
+        self->_rt->openStream(outputParams, inputParams, format, srate, &bframes, cb, (void *) self);
+    } catch (RtError &e) {
+        PyErr_SetString(PyExc_RuntimeError, e.what());
+    }
 
     if (outputParams) delete outputParams;
     if (inputParams)  delete inputParams;
