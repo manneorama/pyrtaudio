@@ -103,10 +103,38 @@ static int __pyrtaudio_renderCallback(void *outputBuffer, void *inputBuffer,
 static int __pyrtaudio_captureCallback(void *outputBuffer, void *inputBuffer,
         unsigned int frames, double streamTime, RtAudioStreamStatus status,
         void *userData) {
+    int retcode = 0;
+    PyObject *result = NULL;
+    PyObject *bytearray = NULL;
+    PyObject *arglist = NULL;
+
     PYGILSTATE_ACQUIRE;
-    //TODO
+    PyRtAudioObject *self = (PyRtAudioObject *) userData;
+    bytearray = PyByteArray_FromStringAndSize((char *) inputBuffer, self->_expectedInputBufferLength);
+    if (!bytearray) {
+        PyErr_SetString(PyExc_RuntimeError, "Internal error: could not create byte array from input buffer");
+        retcode = 2;
+        goto cleanup_no_buffer;
+    }
+
+    arglist = Py_BuildValue("(O)", bytearray);
+    if (!arglist) {
+        //Py_BuildValue sets an exception on error
+        retcode = 2;
+        goto cleanup_no_arglist;
+    }
+
+    result = PyEval_CallObject(self->_cb, arglist);
+    if (Py_None == result)
+        retcode = 1;
+
+    Py_DECREF(arglist);
+    cleanup_no_arglist:
+    Py_DECREF(bytearray);
+    cleanup_no_buffer:
+    Py_DECREF(result);
     PYGILSTATE_RELEASE;
-    return 0;
+    return retcode;
 }
 
 // this function is called by RtAudio when operating in duplex mode
@@ -207,23 +235,6 @@ PyRtAudio_isStreamRunning(PyRtAudioObject *self) {
     bool isIt = self->_rt->isStreamRunning();
     if (isIt) return Py_BuildValue("O", Py_True);
     return Py_BuildValue("O", Py_False);
-}
-
-static PyObject *
-PyRtAudio_stopStream(PyRtAudioObject *self) {
-    bool isIt = self->_rt->isStreamRunning();
-    if (isIt) self->_rt->stopStream();
-
-    if (self->_outputView) free(self->_outputView);
-    if (self->_inputView) free(self->_inputView);
-
-    Py_XDECREF(self->_cb);
-    self->_cb = NULL;
-
-    self->_outputView = self->_inputView = NULL;
-
-    Py_INCREF(Py_None);
-    return Py_None;
 }
 
 static PyObject *
@@ -337,29 +348,82 @@ PyRtAudio_startStream(PyRtAudioObject *self) {
     return Py_None;
 }
 
+static PyObject *
+PyRtAudio_stopStream(PyRtAudioObject *self) {
+    if (!self->_rt->isStreamOpen()) {
+        PyErr_SetString(PyExc_RuntimeError, "No open streams");
+        return NULL;
+    }
+    if (!self->_rt->isStreamRunning()) {
+        PyErr_SetString(PyExc_RuntimeError, "Stream is not running");
+        return NULL;
+    }
+
+    self->_rt->stopStream();
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+static PyObject *
+PyRtAudio_abortStream(PyRtAudioObject *self) {
+    if (!self->_rt->isStreamOpen()) {
+        PyErr_SetString(PyExc_RuntimeError, "No open streams");
+        return NULL;
+    }
+    if (!self->_rt->isStreamRunning()) {
+        PyErr_SetString(PyExc_RuntimeError, "Stream is not running");
+        return NULL;
+    }
+
+    self->_rt->abortStream();
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+static PyObject *
+PyRtAudio_closeStream(PyRtAudioObject *self) {
+    if (!self->_rt->isStreamOpen()) {
+        PyErr_SetString(PyExc_RuntimeError, "No open streams");
+        return NULL;
+    }
+
+    self->_rt->closeStream();
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
 static PyMethodDef PyRtAudioObject_methods[] = {
-    {"getDeviceCount", (PyCFunction) PyRtAudio_getDeviceCount,
+    {"get_device_count", (PyCFunction) PyRtAudio_getDeviceCount,
         METH_NOARGS, "Return the number of audio devices present"},
-    {"getDeviceInfo", (PyCFunction) PyRtAudio_getDeviceInfo,
+    {"get_device_info", (PyCFunction) PyRtAudio_getDeviceInfo,
         METH_VARARGS, "Return the device info for this device index"},
-    {"getDefaultOutputDevice", (PyCFunction) PyRtAudio_getDefaultOutputDevice,
+    {"get_default_output_device", (PyCFunction) PyRtAudio_getDefaultOutputDevice,
         METH_NOARGS, "Return the default output device index"},
-    {"getDefaultInputDevice", (PyCFunction) PyRtAudio_getDefaultInputDevice,
+    {"get_default_input_device", (PyCFunction) PyRtAudio_getDefaultInputDevice,
         METH_NOARGS, "Return the default input device index"},
-    {"isStreamOpen", (PyCFunction) PyRtAudio_isStreamOpen,
+    {"is_stream_open", (PyCFunction) PyRtAudio_isStreamOpen,
         METH_NOARGS, "Return True if a stream is currently open"},
-    {"isStreamRunning", (PyCFunction) PyRtAudio_isStreamRunning,
+    {"is_stream_running", (PyCFunction) PyRtAudio_isStreamRunning,
         METH_NOARGS, "Return True is a stream is currently running"},
-    {"getStreamTime", (PyCFunction) PyRtAudio_getStreamTime,
+    {"get_stream_time", (PyCFunction) PyRtAudio_getStreamTime,
         METH_NOARGS, "Return the current stream time"},
-    {"getStreamLatency", (PyCFunction) PyRtAudio_getStreamLatency,
+    {"get_stream_latency", (PyCFunction) PyRtAudio_getStreamLatency,
         METH_NOARGS, "Return the current stream latency"},
-    {"getStreamSampleRate", (PyCFunction) PyRtAudio_getStreamSampleRate,
+    {"get_stream_sample_rate", (PyCFunction) PyRtAudio_getStreamSampleRate,
         METH_NOARGS, "Return the current stream sample rate"},
-    {"openStream", (PyCFunction) PyRtAudio_openStream,
+    {"open_stream", (PyCFunction) PyRtAudio_openStream,
         METH_VARARGS, "Open an audio stream"},
-    {"startStream", (PyCFunction) PyRtAudio_startStream,
+    {"start_stream", (PyCFunction) PyRtAudio_startStream,
         METH_NOARGS, "Start an open audio stream"},
+    {"stop_stream", (PyCFunction) PyRtAudio_stopStream,
+        METH_NOARGS, "Stop a running audio stream"},
+    {"abort_stream", (PyCFunction) PyRtAudio_abortStream,
+        METH_NOARGS, "Abort a running audio stream (do not flush buffers)"},
+    {"close_stream", (PyCFunction) PyRtAudio_closeStream,
+        METH_NOARGS, "Close a stream. If the stream is running it will be stopped"},
     {NULL}
 };
 
