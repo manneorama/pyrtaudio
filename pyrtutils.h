@@ -8,6 +8,24 @@ void setRuntimeExceptionWithMessage(char const *message) {
     PyErr_SetString(PyExc_RuntimeError, message);
 }
 
+inline int getByteArray(PyObject **obj, void *buf, Py_ssize_t len) {
+    *obj = PyByteArray_FromStringAndSize((char *) buf, len);
+    if (!*obj) {
+        PyErr_SetString(PyExc_RuntimeError,
+                "Internal error: could not create byte array from input buffer");
+        return 2;
+    }
+    return 0;
+}
+
+inline int getArgList(PyObject **args, PyObject **bytearray) {
+    *args = Py_BuildValue("(O)", *bytearray);
+    if (!*args) {
+        return 2;
+    }
+    return 0;
+}
+
 inline int isNone(PyObject *o) {
     if (Py_None == 0)
         return 1;
