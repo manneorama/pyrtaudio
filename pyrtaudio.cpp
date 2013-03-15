@@ -110,11 +110,16 @@ static int __pyrtaudio_captureCallback(void *outputBuffer, void *inputBuffer,
 
     PYGILSTATE_ACQUIRE;
     PyRtAudioObject *self = (PyRtAudioObject *) userData;
-    bytearray = PyByteArray_FromStringAndSize((char *) inputBuffer, self->_expectedInputBufferLength);
+    // creating the byte array with the actual input buffer is
+    // safe since PyByteArray_FromStringAndSize performs a memcpy
+    // (bytearrayobject.c:147)
+    bytearray = PyByteArray_FromStringAndSize(
+            (char *) inputBuffer, self->_expectedInputBufferLength);
     if (!bytearray) {
-        PyErr_SetString(PyExc_RuntimeError, "Internal error: could not create byte array from input buffer");
+        PyErr_SetString(PyExc_RuntimeError, 
+                "Internal error: could not create byte array from input buffer");
         retcode = 2;
-        goto cleanup_no_buffer;
+        goto cleanup_no_bytearray;
     }
 
     arglist = Py_BuildValue("(O)", bytearray);
@@ -128,11 +133,11 @@ static int __pyrtaudio_captureCallback(void *outputBuffer, void *inputBuffer,
     if (Py_None == result)
         retcode = 1;
 
+    Py_DECREF(result);
     Py_DECREF(arglist);
     cleanup_no_arglist:
     Py_DECREF(bytearray);
-    cleanup_no_buffer:
-    Py_DECREF(result);
+    cleanup_no_bytearray:
     PYGILSTATE_RELEASE;
     return retcode;
 }
