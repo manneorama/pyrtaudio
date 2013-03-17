@@ -41,7 +41,6 @@ typedef struct {
     PyObject *_cb;              // the user defined callback
     // storing buffer pointers here avoids memory allocation inside the callbacks
     Py_buffer *_outputView;     // pre-allocated space for an output buffer
-    Py_buffer *_inputView;      // pre-allocated space for an input buffer
     unsigned long _expectedOutputBufferLength;
     unsigned long _expectedInputBufferLength;
 } PyRtAudioObject;
@@ -113,13 +112,17 @@ static int __pyrtaudio_captureCallback(void *outputBuffer, void *inputBuffer,
     // creating the byte array with the actual input buffer is
     // safe since PyByteArray_FromStringAndSize performs a memcpy
     // (bytearrayobject.c:147)
+    // which also means that DECREF:ing the bytearray won't touch
+    // our output buffer
     retcode = getByteArray(&bytearray, inputBuffer, 
             self->_expectedInputBufferLength);
     if (retcode) goto cleanup_no_bytearray;
 
+    // pack the bytearray into an argument list
     retcode = getArgList(&arglist, &bytearray);
     if (retcode) goto cleanup_no_arglist;
 
+    // call the python function
     result = PyEval_CallObject(self->_cb, arglist);
     retcode = isNone(result);
 
@@ -192,12 +195,11 @@ PyRtAudio_dealloc(PyRtAudioObject *self) {
         delete self->_rt;
 
     if (self->_outputView) free(self->_outputView);
-    if (self->_inputView) free(self->_inputView);
 
     Py_XDECREF(self->_cb);
     self->_cb = NULL;
 
-    self->_outputView = self->_inputView = NULL;
+    self->_outputView = NULL;
 
     self->ob_type->tp_free((PyObject *) self);
 }
@@ -211,7 +213,6 @@ PyRtAudio_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
         self->_rt = new RtAudio;
         self->_cb = NULL;
         self->_outputView = NULL;
-        self->_inputView = NULL;
     }
     
     return (PyObject *) self;
@@ -322,7 +323,6 @@ PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args) {
     RtAudio::StreamParameters *outputParams = NULL;
 
     self->_outputView = NULL;
-    self->_inputView = NULL;
     if (hasOutputParams) { 
         outputParams = populateStreamParameters(oparms);
         if (!outputParams) {
@@ -343,7 +343,6 @@ PyRtAudio_openStream(PyRtAudioObject *self, PyObject *args) {
         self->_expectedInputBufferLength = widthFromFormat(format);
         self->_expectedInputBufferLength *= inputParams->nChannels;
         self->_expectedInputBufferLength *= bframes;
-        self->_inputView = (Py_buffer *) malloc(sizeof(*(self->_inputView)));
     }
 
     // decide which callback to use
