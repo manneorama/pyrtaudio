@@ -50,8 +50,8 @@ static PyObject *PyRtAudio_SINT8;
 static PyObject *PyRtAudio_SINT16;
 static PyObject *PyRtAudio_SINT24;
 static PyObject *PyRtAudio_SINT32;
-static PyObject *PyRtAudio_FLOAT32;
-static PyObject *PyRtAudio_FLOAT64;
+//static PyObject *PyRtAudio_FLOAT32;
+//static PyObject *PyRtAudio_FLOAT64;
 
 // this function is called by RtAudio when operating in render-only mode
 static int __pyrtaudio_renderCallback(void *outputBuffer, void *inputBuffer,
@@ -546,13 +546,13 @@ PyMODINIT_FUNC initpyrtaudio(void) {
     PyModule_AddObject(m, "RTAUDIO_SINT32", PyRtAudio_SINT32);
     Py_INCREF(PyRtAudio_SINT32);
 
-    PyRtAudio_FLOAT32 = PyLong_FromUnsignedLong(RTAUDIO_FLOAT32);
-    PyModule_AddObject(m, "RTAUDIO_FLOAT32", PyRtAudio_FLOAT32);
-    Py_INCREF(PyRtAudio_FLOAT32);
+    //PyRtAudio_FLOAT32 = PyLong_FromUnsignedLong(RTAUDIO_FLOAT32);
+    //PyModule_AddObject(m, "RTAUDIO_FLOAT32", PyRtAudio_FLOAT32);
+    //Py_INCREF(PyRtAudio_FLOAT32);
 
-    PyRtAudio_FLOAT64 = PyLong_FromUnsignedLong(RTAUDIO_FLOAT64);
-    PyModule_AddObject(m, "RTAUDIO_FLOAT64", PyRtAudio_FLOAT64);
-    Py_INCREF(PyRtAudio_FLOAT64);
+    //PyRtAudio_FLOAT64 = PyLong_FromUnsignedLong(RTAUDIO_FLOAT64);
+    //PyModule_AddObject(m, "RTAUDIO_FLOAT64", PyRtAudio_FLOAT64);
+    //Py_INCREF(PyRtAudio_FLOAT64);
 
     Py_INCREF(&pyrtaudio_PyRtAudioType);
     PyModule_AddObject(m, "RtAudio", 
